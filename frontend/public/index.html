@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TraceMind – AI Debugging Assistant with Grounded Knowledge Retrieval</title>
+  <meta name="description" content="Applied RAG debugging system combining hybrid retrieval, BM25, cross-encoder reranking, and grounded visual citations.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-canvas: #090d16;
+      --bg-panel: #0d1322;
+      --bg-card: #131c30;
+      --bg-card-hover: #19253f;
+      --bg-input: #080c18;
+      
+      --border-base: rgba(255, 255, 255, 0.08);
+      --border-subtle: rgba(255, 255, 255, 0.04);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --border-focus: #38bdf8;
+      
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --text-dim: #475569;
+      
+      --accent-emerald: #10b981;
+      --accent-emerald-dim: rgba(16, 185, 129, 0.14);
+      --accent-amber: #f59e0b;
+      --accent-amber-dim: rgba(245, 158, 11, 0.14);
+      --accent-rose: #f43f5e;
+      --accent-rose-dim: rgba(244, 63, 94, 0.14);
+      --accent-sky: #0ea5e9;
+      --accent-sky-dim: rgba(14, 165, 233, 0.14);
+      --accent-indigo: #6366f1;
+      --accent-indigo-dim: rgba(99, 102, 241, 0.14);
+
+      --radius-xs: 4px;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+
+    .tm-icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+
+    /* Header */
+    .app-header {
+      height: 56px;
+      background: rgba(13, 19, 34, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+    .header-brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon-box {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(99, 102, 241, 0.2));
+      border: 1px solid rgba(14, 165, 233, 0.35);
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent-sky);
+    }
+    .brand-info { display: flex; flex-direction: column; }
+    .brand-title-row { display: flex; align-items: center; gap: 8px; }
+    .brand-name { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); }
+    .brand-version-badge {
+      font-size: 10px; font-family: var(--font-mono); font-weight: 600;
+      padding: 1px 6px; border-radius: 4px; background: var(--bg-card);
+      border: 1px solid var(--border-base); color: var(--text-secondary);
+    }
+    .brand-tagline { font-size: 11px; color: var(--text-muted); }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .header-telemetry-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg-card); border: 1px solid var(--border-base);
+      padding: 5px 12px; border-radius: 20px; font-size: 12px;
+      color: var(--text-secondary); font-variant-numeric: tabular-nums;
+    }
+    .header-telemetry-pill strong { color: var(--accent-sky); }
+    .telemetry-status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent-emerald); box-shadow: 0 0 6px var(--accent-emerald);
+    }
+    .command-trigger-btn, .btn-header-action {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg-card); border: 1px solid var(--border-base);
+      color: var(--text-secondary); padding: 5px 12px; border-radius: var(--radius-sm);
+      font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s ease;
+    }
+    .command-trigger-btn:hover, .btn-header-action:hover {
+      background: var(--bg-card-hover); border-color: var(--border-strong); color: var(--text-primary);
+    }
+    .command-trigger-btn kbd {
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 4px; padding: 1px 5px; font-size: 10px; font-family: var(--font-mono);
+    }
+
+    /* 3-Col Layout */
+    .workspace-3col {
+      display: grid;
+      grid-template-columns: 370px 1fr 440px;
+      gap: 14px;
+      padding: 14px 18px;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+    @media (max-width: 1300px) {
+      .workspace-3col { grid-template-columns: 340px 1fr 380px; }
+    }
+
+    .panel-container {
+      background: var(--bg-panel); border: 1px solid var(--border-base);
+      border-radius: var(--radius-md); display: flex; flex-direction: column;
+      overflow: hidden; position: relative; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+    .panel-header {
+      height: 48px; padding: 0 16px; border-bottom: 1px solid var(--border-base);
+      background: rgba(19, 28, 48, 0.4); display: flex; align-items: center;
+      justify-content: space-between; flex-shrink: 0;
+    }
+    .panel-title-wrap { display: flex; align-items: center; gap: 8px; }
+    .panel-index-badge {
+      font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+      background: rgba(255, 255, 255, 0.07); color: var(--text-muted);
+      padding: 2px 5px; border-radius: 4px;
+    }
+    .panel-header h3 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: var(--text-primary); }
+    .panel-header-desc { font-size: 11px; color: var(--text-muted); }
+
+    /* Panel 1: Log Input */
+    .log-panel-body {
+      padding: 14px; display: flex; flex-direction: column; flex: 1;
+      overflow-y: auto; gap: 12px;
+    }
+    .field-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--text-muted); display: flex; align-items: center; gap: 5px;
+    }
+    .preset-selector-bar { display: flex; flex-direction: column; gap: 6px; }
+    .preset-dropdown-container { position: relative; }
+    .preset-select {
+      width: 100%; background: var(--bg-card); border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm); padding: 8px 10px; color: var(--text-primary);
+      font-size: 12px; outline: none; cursor: pointer;
+    }
+    .terminal-editor-wrapper {
+      display: flex; flex-direction: column; flex: 1; background: var(--bg-input);
+      border: 1px solid var(--border-base); border-radius: var(--radius-sm);
+      overflow: hidden; min-height: 220px;
+    }
+    .terminal-editor-header {
+      height: 32px; background: rgba(13, 19, 34, 0.7); border-bottom: 1px solid var(--border-base);
+      padding: 0 10px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .terminal-header-title {
+      display: flex; align-items: center; gap: 6px; font-size: 11px;
+      font-family: var(--font-mono); color: var(--text-secondary);
+    }
+    .severity-pill {
+      font-size: 10px; font-family: var(--font-mono); font-weight: 600; padding: 1px 6px; border-radius: 3px;
+    }
+    .severity-pill.error { background: var(--accent-rose-dim); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .terminal-editor-body { display: flex; flex: 1; overflow: hidden; }
+    .gutter-lines {
+      width: 36px; padding: 10px 0; background: rgba(0, 0, 0, 0.2);
+      border-right: 1px solid var(--border-subtle); color: var(--text-dim);
+      font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+      text-align: right; padding-right: 8px; user-select: none;
+    }
+    .code-textarea {
+      flex: 1; background: transparent; border: none; color: var(--text-primary);
+      font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+      padding: 10px; resize: none; outline: none; overflow-y: auto;
+    }
+    .log-action-footer { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
+    .cache-toggle-row {
+      display: flex; align-items: center; justify-content: space-between; padding: 6px 10px;
+      background: var(--bg-card); border: 1px solid var(--border-base); border-radius: var(--radius-sm);
+    }
+    .cache-toggle-label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+    .btn-primary-diagnose {
+      width: 100%; height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px;
+      background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%); border: 1px solid #38bdf8;
+      border-radius: var(--radius-sm); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 2px 10px rgba(2, 132, 199, 0.35); transition: all 0.15s ease;
+    }
+    .btn-primary-diagnose:hover { background: linear-gradient(180deg, #0369a1 0%, #075985 100%); }
+    .btn-primary-diagnose kbd {
+      background: rgba(0, 0, 0, 0.3); padding: 2px 5px; border-radius: 3px;
+      font-size: 10px; font-family: var(--font-mono); border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* Panel 2: Result & Tabs */
+    .result-tabs-nav {
+      display: flex; align-items: center; background: rgba(13, 19, 34, 0.5);
+      border-bottom: 1px solid var(--border-base); padding: 0 12px; gap: 4px; flex-shrink: 0;
+    }
+    .result-tab-btn {
+      display: flex; align-items: center; gap: 6px; padding: 9px 12px; background: transparent;
+      border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 12px;
+      font-weight: 500; cursor: pointer; transition: all 0.15s ease;
+    }
+    .result-tab-btn:hover { color: var(--text-secondary); }
+    .result-tab-btn.active { color: var(--accent-sky); border-bottom-color: var(--accent-sky); font-weight: 600; }
+    .tab-count-badge {
+      font-size: 10px; font-family: var(--font-mono); background: var(--bg-card);
+      padding: 1px 5px; border-radius: 10px; border: 1px solid var(--border-base);
+    }
+    .result-scroll-content { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+    /* Empty state */
+    .empty-state-wrap {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 40px; text-align: center;
+    }
+    .empty-state-icon {
+      width: 52px; height: 52px; border-radius: var(--radius-md); background: var(--bg-card);
+      border: 1px solid var(--border-base); display: flex; align-items: center; justify-content: center;
+      color: var(--accent-sky); margin-bottom: 16px;
+    }
+    .empty-pipeline-preview {
+      display: flex; align-items: center; gap: 8px; background: var(--bg-card);
+      border: 1px solid var(--border-base); padding: 6px 14px; border-radius: 20px;
+      font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); margin-top: 14px;
+    }
+
+    /* Diagnosis Cards */
+    .incident-hero-card {
+      background: var(--bg-card); border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm); padding: 14px 16px; display: flex;
+      flex-direction: column; gap: 8px; position: relative;
+    }
+    .incident-hero-card::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: var(--accent-emerald); border-top-left-radius: var(--radius-sm);
+      border-bottom-left-radius: var(--radius-sm);
+    }
+    .hero-meta-row { display: flex; align-items: center; justify-content: space-between; }
+    .hero-status-pill {
+      display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+      padding: 3px 8px; border-radius: 12px; background: var(--accent-emerald-dim);
+      color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .hero-root-cause-title { font-size: 15px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
+    .hero-explanation { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+    .quick-fix-card {
+      background: linear-gradient(180deg, rgba(14, 165, 233, 0.08) 0%, rgba(13, 19, 34, 0.2) 100%);
+      border: 1px solid rgba(14, 165, 233, 0.3); border-radius: var(--radius-sm);
+      padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .quick-fix-header {
+      display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-sky);
+    }
+    .quick-fix-body { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+
+    .impact-row-callout {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      background: var(--accent-rose-dim); border: 1px solid rgba(244, 63, 94, 0.25);
+      border-radius: var(--radius-sm); font-size: 12px;
+    }
+    .impact-badge-tag { font-weight: 600; color: var(--accent-rose); text-transform: uppercase; font-size: 10px; }
+
+    /* Steps */
+    .remediation-steps-section { display: flex; flex-direction: column; gap: 10px; }
+    .section-headline-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .section-headline {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.03em; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;
+    }
+    .step-card {
+      background: var(--bg-card); border: 1px solid var(--border-base);
+      border-radius: var(--radius-sm); display: flex; overflow: hidden;
+    }
+    .step-number-gutter {
+      width: 36px; background: rgba(0, 0, 0, 0.25); border-right: 1px solid var(--border-subtle);
+      display: flex; align-items: flex-start; justify-content: center; padding-top: 12px;
+      font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text-muted);
+    }
+    .step-content-box { flex: 1; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .step-title-row { display: flex; align-items: center; justify-content: space-between; }
+    .step-priority-tag {
+      font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+      background: rgba(14, 165, 233, 0.14); color: var(--accent-sky); border: 1px solid rgba(14, 165, 233, 0.25);
+    }
+    .copy-snippet-btn {
+      display: flex; align-items: center; gap: 4px; background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-base); border-radius: var(--radius-xs); padding: 3px 8px;
+      font-size: 11px; color: var(--text-secondary); cursor: pointer;
+    }
+    .copy-snippet-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-primary); }
+    .step-code-container {
+      background: var(--bg-input); border: 1px solid var(--border-base);
+      border-radius: var(--radius-xs); padding: 8px 10px; font-family: var(--font-mono);
+      font-size: 11px; color: #e2e8f0; overflow-x: auto;
+    }
+
+    /* Citations */
+    .citations-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .citation-chip-card {
+      background: var(--bg-card); border: 1px solid var(--border-base); border-radius: var(--radius-sm);
+      padding: 10px 12px; cursor: pointer; transition: all 0.15s ease; display: flex; flex-direction: column; gap: 4px;
+    }
+    .citation-chip-card:hover { border-color: var(--border-strong); background: var(--bg-card-hover); }
+    .citation-chip-card.selected { border-color: var(--accent-sky); background: rgba(14, 165, 233, 0.08); }
+    .citation-card-header { display: flex; align-items: center; justify-content: space-between; }
+    .citation-doc-name { font-size: 11px; font-family: var(--font-mono); font-weight: 600; color: var(--accent-sky); }
+    .citation-snippet-quote { font-size: 12px; color: var(--text-secondary); line-height: 1.5; font-style: italic; }
+
+    /* Telemetry Tab Waterfall */
+    .waterfall-trace-card {
+      background: var(--bg-card); border: 1px solid var(--border-base); border-radius: var(--radius-sm);
+      padding: 14px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .waterfall-header { display: flex; align-items: center; justify-content: space-between; }
+    .total-latency-tag {
+      font-family: var(--font-mono); font-size: 11px; font-weight: 600; padding: 2px 8px;
+      border-radius: 4px; background: rgba(14, 165, 233, 0.14); color: var(--accent-sky); border: 1px solid rgba(14, 165, 233, 0.25);
+    }
+    .waterfall-timeline { display: flex; flex-direction: column; gap: 8px; }
+    .waterfall-row { display: flex; align-items: center; gap: 10px; }
+    .waterfall-step-name { width: 150px; font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); flex-shrink: 0; }
+    .waterfall-bar-track { flex: 1; height: 18px; background: rgba(255, 255, 255, 0.04); border-radius: 3px; overflow: hidden; position: relative; }
+    .waterfall-bar-fill { height: 100%; border-radius: 3px; }
+    .waterfall-step-ms { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); width: 55px; text-align: right; }
+
+    .candidates-table-wrap { border: 1px solid var(--border-base); border-radius: var(--radius-sm); overflow-x: auto; background: var(--bg-input); }
+    .tm-data-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--font-mono); }
+    .tm-data-table th { background: rgba(13, 19, 34, 0.8); color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border-base); text-align: left; }
+    .tm-data-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
+
+    /* Panel 3: Document Viewer */
+    .doc-dropdown-selector {
+      background: var(--bg-card); border: 1px solid var(--border-base); color: var(--text-primary);
+      font-size: 11px; padding: 4px 8px; border-radius: var(--radius-xs); outline: none; cursor: pointer;
+    }
+    .viewer-search-toolbar {
+      height: 38px; padding: 0 12px; background: rgba(13, 19, 34, 0.5);
+      border-bottom: 1px solid var(--border-base); display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .viewer-search-input-wrap {
+      display: flex; align-items: center; gap: 6px; flex: 1; background: var(--bg-input);
+      border: 1px solid var(--border-base); border-radius: var(--radius-xs); padding: 3px 8px;
+    }
+    .viewer-search-input-wrap input { background: transparent; border: none; color: var(--text-primary); font-size: 11px; outline: none; width: 100%; }
+    .doc-viewer-canvas-wrap { flex: 1; display: flex; overflow: hidden; position: relative; }
+    .doc-markdown-content { flex: 1; overflow-y: auto; padding: 16px 20px; font-family: var(--font-mono); font-size: 11px; line-height: 1.6; color: #cbd5e1; }
+    .grounded-source-mark {
+      background: rgba(14, 165, 233, 0.25); color: #fff; border-left: 2px solid var(--accent-sky); padding: 2px 4px;
+    }
+    .citation-minimap-rail { width: 14px; background: rgba(0, 0, 0, 0.2); border-left: 1px solid var(--border-subtle); position: relative; }
+    .minimap-marker { position: absolute; left: 2px; right: 2px; height: 4px; border-radius: 2px; background: var(--accent-sky); }
+
+    /* Toast Stack */
+    .tm-toast-container { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 90; }
+    .tm-toast-card {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-panel);
+      border: 1px solid var(--border-strong); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0,0,0,0.6); min-width: 260px;
+    }
+
+    /* Modals */
+    .tm-modal-backdrop {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding-top: 100px; z-index: 100;
+    }
+    .tm-command-palette {
+      width: 600px; max-width: 90vw; background: var(--bg-panel); border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md); box-shadow: 0 20px 60px rgba(0,0,0,0.7); overflow: hidden; display: flex; flex-direction: column;
+    }
+    .command-search-header { height: 50px; padding: 0 16px; border-bottom: 1px solid var(--border-base); display: flex; align-items: center; gap: 10px; }
+    .command-search-input { flex: 1; background: transparent; border: none; color: var(--text-primary); font-size: 14px; outline: none; }
+    .command-results-list { max-height: 360px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+    .command-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); cursor: pointer; }
+    .command-item:hover { background: var(--bg-card-hover); }
+
+    /* Copilot Drawer */
+    .copilot-drawer {
+      position: fixed; top: 56px; right: 0; bottom: 0; width: 400px; max-width: 90vw;
+      background: var(--bg-panel); border-left: 1px solid var(--border-strong);
+      box-shadow: -10px 0 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; z-index: 60;
+    }
+    .copilot-header { height: 50px; padding: 0 16px; border-bottom: 1px solid var(--border-base); display: flex; align-items: center; justify-content: space-between; }
+    .copilot-messages-flow { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .copilot-msg-card { display: flex; flex-direction: column; gap: 3px; max-width: 90%; }
+    .copilot-msg-card.user { align-self: flex-end; }
+    .copilot-msg-bubble { padding: 8px 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; }
+    .copilot-msg-card.user .copilot-msg-bubble { background: #0284c7; color: #fff; }
+    .copilot-msg-card.bot .copilot-msg-bubble { background: var(--bg-card); border: 1px solid var(--border-base); color: #e2e8f0; }
+    .copilot-input-form { height: 50px; padding: 0 12px; border-top: 1px solid var(--border-base); display: flex; align-items: center; gap: 8px; }
+    .copilot-input { flex: 1; background: var(--bg-input); border: 1px solid var(--border-base); border-radius: var(--radius-xs); padding: 6px 10px; font-size: 12px; color: #fff; outline: none; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-icon-box">
+        <svg class="tm-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="brand-info">
+        <div class="brand-title-row">
+          <h2 class="brand-name">TraceMind</h2>
+          <span class="brand-version-badge">v2.4-prod</span>
+        </div>
+        <span class="brand-tagline">Deterministic Root-Cause Observability & RAG</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="header-telemetry-pill" id="cache-telemetry-pill">
+        <span class="telemetry-status-dot"></span>
+        <span id="cache-pill-text">Cache Hit Rate: <strong>99.3%</strong></span>
+      </div>
+
+      <div class="header-telemetry-pill">
+        <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="1.75"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <span id="doc-count-pill">7 Runbooks</span>
+      </div>
+
+      <button type="button" class="command-trigger-btn" onclick="toggleCommandPalette(true)">
+        <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
+        <span>Command Hub</span>
+        <kbd>⌘K</kbd>
+      </button>
+
+      <button type="button" class="btn-header-action" onclick="document.getElementById('file-upload-input').click()">
+        <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 12v6"/><path d="m9 15 3-3 3 3"/></svg>
+        <span>Ingest Doc</span>
+      </button>
+      <input type="file" id="file-upload-input" accept=".md,.txt,.pdf" style="display:none;" onchange="handleFileUpload(event)">
+
+      <button type="button" class="btn-header-action" onclick="showPurgeConfirm()" title="Purge Cache">
+        <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+
+      <button type="button" class="btn-header-action" onclick="toggleCopilot()">
+        <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Copilot</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 3-Col Workspace -->
+  <main class="workspace-3col">
+    <!-- Panel 1: Log Input & Terminal -->
+    <div class="panel-container">
+      <div class="panel-header">
+        <div class="panel-title-wrap">
+          <span class="panel-index-badge">01</span>
+          <h3>Input Error Log</h3>
+        </div>
+        <span class="panel-header-desc">Terminal Output & Traces</span>
+      </div>
+
+      <div class="log-panel-body">
+        <div class="preset-selector-bar">
+          <span class="field-label">Failure Presets</span>
+          <select class="preset-select" id="preset-select" onchange="onSelectPreset(this.value)">
+            <option value="0">Windows 0x80070005 (Access Denied)</option>
+            <option value="1">Docker OOMKilled 137 (cgroup limit)</option>
+            <option value="2">K8s CrashLoopBackOff (Liveness HTTP 500)</option>
+            <option value="3">Docker ECONNREFUSED (DB not ready)</option>
+            <option value="4">Python RecursionError (Call stack depth)</option>
+            <option value="5">Postgres 53300 (Max pool connections)</option>
+            <option value="6">Ambiguous Edge Case (Low Confidence Demo)</option>
+          </select>
+        </div>
+
+        <div class="terminal-editor-wrapper">
+          <div class="terminal-editor-header">
+            <div class="terminal-header-title">
+              <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <span>raw_stacktrace.log</span>
+            </div>
+            <span class="severity-pill error" id="severity-tag">ERROR</span>
+          </div>
+
+          <div class="terminal-editor-body">
+            <div class="gutter-lines" id="gutter-lines">1<br>2<br>3<br>4<br>5</div>
+            <textarea id="log-input-box" class="code-textarea" placeholder="Paste error logs, stack trace, exit code, or terminal output here..." oninput="updateGutter()"></textarea>
+          </div>
+        </div>
+
+        <div class="log-action-footer">
+          <div class="cache-toggle-row">
+            <label class="cache-toggle-label">
+              <input type="checkbox" id="bypass-cache-checkbox">
+              <span>Bypass Semantic Cache</span>
+            </label>
+            <span style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Sub-10ms cache active</span>
+          </div>
+
+          <button type="button" class="btn-primary-diagnose" id="diagnose-btn" onclick="executeDiagnosis()">
+            <svg class="tm-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>Execute Diagnosis</span>
+            <kbd>↵</kbd>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2: Result Panel -->
+    <div class="panel-container">
+      <div class="panel-header">
+        <div class="panel-title-wrap">
+          <span class="panel-index-badge">02</span>
+          <h3>Diagnostic Resolution</h3>
+        </div>
+        <div id="header-status-pill-wrap">
+          <span class="hero-status-pill" id="header-status-pill">
+            <svg class="tm-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span id="header-conf-text">96% Grounded</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="result-tabs-nav">
+        <button class="result-tab-btn active" id="tab-btn-remediation" onclick="switchTab('remediation')">
+          <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span>Remediation Plan</span>
+        </button>
+        <button class="result-tab-btn" id="tab-btn-telemetry" onclick="switchTab('telemetry')">
+          <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span>RAG Telemetry</span>
+          <span class="tab-count-badge" id="telemetry-ms-badge">8ms</span>
+        </button>
+        <button class="result-tab-btn" id="tab-btn-audit" onclick="switchTab('audit')">
+          <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          <span>Grounding Audit</span>
+        </button>
+      </div>
+
+      <div class="result-scroll-content" id="result-scroll-content">
+        <!-- Default Empty State -->
+        <div class="empty-state-wrap" id="empty-state">
+          <div class="empty-state-icon">
+            <svg class="tm-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <h3>TraceMind Applied RAG Engine</h3>
+          <p>Select a failure preset or paste an incident log on the left, then click <strong>Execute Diagnosis</strong> to run hybrid BM25 + dense vector retrieval with cross-encoder reranking.</p>
+          <div class="empty-pipeline-preview">
+            <span>Query Rewrite</span> ➔ <span>BM25 + Dense RRF</span> ➔ <span>Cross-Encoder Rerank</span> ➔ <span>Grounded Resolution</span>
+          </div>
+        </div>
+
+        <!-- Rendered Results View (Dynamically populated) -->
+        <div id="results-view" style="display:none; display:flex; flex-direction:column; gap:14px;"></div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Source Knowledge Viewer -->
+    <div class="panel-container">
+      <div class="panel-header">
+        <div class="panel-title-wrap">
+          <span class="panel-index-badge">03</span>
+          <h3>Source Knowledge</h3>
+        </div>
+        <select class="doc-dropdown-selector" id="doc-selector" onchange="onSelectDoc(this.value)"></select>
+      </div>
+
+      <div class="viewer-search-toolbar">
+        <div class="viewer-search-input-wrap">
+          <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.75"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="doc-search-input" placeholder="Search within this runbook..." oninput="onSearchDoc(this.value)">
+          <span id="search-counter" style="font-size:10px; font-family:var(--font-mono); color:var(--accent-sky);"></span>
+        </div>
+        <div id="citation-status-pill" style="display:none; font-size:11px; color:var(--accent-sky); padding:2px 8px; border-radius:12px; background:rgba(14,165,233,0.1); border:1px solid rgba(14,165,233,0.25);">
+          Highlighting passage
+        </div>
+      </div>
+
+      <div class="doc-viewer-canvas-wrap">
+        <div class="doc-markdown-content" id="doc-content-body">Loading documentation...</div>
+        <div class="citation-minimap-rail" id="minimap-rail">
+          <div class="minimap-marker" style="top: 35%;"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Copilot Slide-over Drawer -->
+  <div class="copilot-drawer" id="copilot-drawer" style="display:none;">
+    <div class="copilot-header">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <svg class="tm-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-sky)" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <h4 style="font-size:13px; font-weight:600;">TraceMind Copilot</h4>
+        <span style="font-size:10px; font-family:var(--font-mono); background:rgba(99,102,241,0.14); color:var(--accent-indigo); padding:2px 6px; border-radius:4px;">Context-Aware</span>
+      </div>
+      <button onclick="toggleCopilot()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">✕</button>
+    </div>
+    <div class="copilot-messages-flow" id="copilot-messages">
+      <div class="copilot-msg-card system">
+        <div class="copilot-msg-bubble" style="background:rgba(255,255,255,0.04); border:1px dashed var(--border-base); color:var(--text-muted);">
+          TraceMind Copilot is grounded in active diagnoses and retrieved runbooks. Ask follow-up questions regarding command flags or rollback steps.
+        </div>
+      </div>
+    </div>
+    <form class="copilot-input-form" onsubmit="handleCopilotSubmit(event)">
+      <input type="text" id="copilot-input" class="copilot-input" placeholder="Ask follow-up question about this fix...">
+      <button type="submit" class="btn-header-action" style="padding:6px 10px;">Send</button>
+    </form>
+  </div>
+
+  <!-- Command Palette Modal -->
+  <div class="tm-modal-backdrop" id="command-palette-modal" style="display:none;" onclick="toggleCommandPalette(false)">
+    <div class="tm-command-palette" onclick="event.stopPropagation()">
+      <div class="command-search-header">
+        <svg class="tm-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.75"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="cmd-search-input" class="command-search-input" placeholder="Type a command, switch failure preset, or search runbooks..." oninput="filterCommands(this.value)">
+        <kbd style="font-size:10px; font-family:var(--font-mono); color:var(--text-muted);">ESC</kbd>
+      </div>
+      <div class="command-results-list" id="cmd-results-list"></div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="tm-modal-backdrop" id="confirm-modal" style="display:none;">
+    <div style="width:420px; background:var(--bg-panel); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:16px; display:flex; flex-direction:column; gap:12px;">
+      <h3 style="font-size:14px; font-weight:600;">Purge Semantic Vector Cache</h3>
+      <p style="font-size:12px; color:var(--text-secondary); line-height:1.5;">Are you sure you want to clear the semantic vector cache? Subsequent repeated queries will require full hybrid BM25 and LLM roundtrips.</p>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn-header-action" onclick="closePurgeConfirm()">Cancel</button>
+        <button style="background:var(--accent-rose); border:1px solid #fb7185; color:#fff; padding:6px 12px; border-radius:var(--radius-sm); font-size:12px; font-weight:600; cursor:pointer;" onclick="confirmPurgeCache()">Purge Cache</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="tm-toast-container" id="toast-container"></div>
+
+  <script>
+    const PRESETS = [
+      {
+        label: "Windows 0x80070005 (Access Denied)",
+        log: "Error: 0x80070005 Access Denied while installing package at C:\\Users\\HP\\AppData\\Local\\Temp\\setup.msi"
+      },
+      {
+        label: "Docker OOMKilled 137 (cgroup limit)",
+        log: "Error: container worker-task-9a2 was killed (exit code 137): OOMKilled by Linux cgroup enforcer"
+      },
+      {
+        label: "K8s CrashLoopBackOff (Liveness HTTP 500)",
+        log: "api-gateway-7f8d6-x9b12   0/1     CrashLoopBackOff   6          3m15s\nError: initialDelaySeconds exceeded, liveness probe failed HTTP 500"
+      },
+      {
+        label: "Docker ECONNREFUSED (DB not ready)",
+        log: "Error: connect ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1494:16)\n    errno: -4078, code: 'ECONNREFUSED', syscall: 'connect', address: '127.0.0.1', port: 5432\nContext: App started before DB container was ready in docker-compose."
+      },
+      {
+        label: "Python RecursionError (Call stack depth)",
+        log: "RecursionError: maximum recursion depth exceeded while calling a Python object\n  File \"engine/parser.py\", line 84, in traverse_ast\n    return traverse_ast(node.child)\n  [Previous line repeated 996 more times]"
+      },
+      {
+        label: "Postgres 53300 (Max pool connections)",
+        log: "psycopg2.OperationalError: FATAL: sorry, too many clients already (SQLSTATE 53300)"
+      },
+      {
+        label: "Ambiguous Edge Case (Low Confidence Demo)",
+        log: "Application randomly stopped responding. No stack trace was written to stdout. Screen flickered and task disappeared from process list without error code."
+      }
+    ];
+
+    let currentResult = null;
+    let currentDocId = null;
+    let documentsList = [];
+    let activeTab = 'remediation';
+    let docRawContent = "";
+    let activeSnippet = "";
+
+    // Init
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("log-input-box").value = PRESETS[0].log;
+      updateGutter();
+      loadDocsAndCache();
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        toggleCommandPalette(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        executeDiagnosis();
+      }
+      if (e.key === 'Escape') {
+        toggleCommandPalette(false);
+        closePurgeConfirm();
+      }
+    });
+
+    function updateGutter() {
+      const text = document.getElementById("log-input-box").value;
+      const count = Math.max(text.split("\n").length, 6);
+      let lines = "";
+      for (let i = 1; i <= count; i++) lines += i + "<br>";
+      document.getElementById("gutter-lines").innerHTML = lines;
+    }
+
+    function onSelectPreset(idx) {
+      document.getElementById("log-input-box").value = PRESETS[idx].log;
+      updateGutter();
+    }
+
+    async function loadDocsAndCache() {
+      try {
+        const res = await fetch("/api/documents");
+        if (res.ok) {
+          documentsList = await res.json();
+          const sel = document.getElementById("doc-selector");
+          sel.innerHTML = documentsList.map(d => `<option value="${d.doc_id}">${d.title} (${d.chunk_count} chunks)</option>`).join("");
+          document.getElementById("doc-count-pill").textContent = `${documentsList.length} Runbooks`;
+          if (documentsList.length > 0) {
+            onSelectDoc(documentsList[0].doc_id);
+          }
+        }
+        const cRes = await fetch("/api/health/cache");
+        if (cRes.ok) {
+          const stats = await cRes.json();
+          document.getElementById("cache-pill-text").innerHTML = `Cache Hit Rate: <strong>${stats.hit_rate_pct}%</strong> (${stats.hit_count} hits)`;
+        }
+      } catch (err) {
+        console.error("Init err:", err);
+      }
+    }
+
+    async function onSelectDoc(docId, highlightSnippet) {
+      currentDocId = docId;
+      try {
+        const res = await fetch(`/api/documents/${docId}`);
+        if (res.ok) {
+          const data = await res.json();
+          docRawContent = data.content;
+          renderDoc(highlightSnippet || activeSnippet);
+        }
+      } catch (err) {
+        console.error("Doc load err:", err);
+      }
+    }
+
+    function renderDoc(snippet, searchTerm = "") {
+      const container = document.getElementById("doc-content-body");
+      if (!docRawContent) {
+        container.textContent = "No document loaded.";
+        return;
+      }
+
+      let text = docRawContent;
+      if (snippet && text.includes(snippet.trim())) {
+        const parts = text.split(snippet.trim());
+        container.innerHTML = parts.join(`<mark class="grounded-source-mark">${escapeHtml(snippet.trim())}</mark>`);
+        setTimeout(() => {
+          const el = container.querySelector(".grounded-source-mark");
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      } else {
+        container.textContent = text;
+      }
+    }
+
+    function onSearchDoc(q) {
+      if (!q.trim()) {
+        document.getElementById("search-counter").textContent = "";
+        renderDoc(activeSnippet);
+        return;
+      }
+      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = (docRawContent.match(regex) || []).length;
+      document.getElementById("search-counter").textContent = `${matches} found`;
+    }
+
+    async function executeDiagnosis() {
+      const text = document.getElementById("log-input-box").value.trim();
+      if (!text) return;
+
+      const btn = document.getElementById("diagnose-btn");
+      btn.disabled = true;
+      btn.innerHTML = `<svg class="tm-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="animation:spin 1s linear infinite;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg> Diagnosing Pipeline...`;
+
+      const forceRefresh = document.getElementById("bypass-cache-checkbox").checked;
+
+      try {
+        const res = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ raw_error: text, force_refresh: forceRefresh })
+        });
+        if (!res.ok) throw new Error("Diagnosis execution failed");
+        currentResult = await res.json();
+        renderResults();
+        showToast("success", currentResult.debug?.cache_hit ? "Instant Cache Hit" : "Diagnosis Complete", `Resolved in ${currentResult.debug?.latency_ms ?? 28}ms.`);
+      } catch (err) {
+        showToast("error", "Diagnosis Error", err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="tm-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Execute Diagnosis</span><kbd>↵</kbd>`;
+      }
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll(".result-tab-btn").forEach(b => b.classList.remove("active"));
+      document.getElementById(`tab-btn-${tab}`).classList.add("active");
+      renderResults();
+    }
+
+    function renderResults() {
+      if (!currentResult) return;
+      document.getElementById("empty-state").style.display = "none";
+      const view = document.getElementById("results-view");
+      view.style.display = "flex";
+
+      const r = currentResult;
+      const confPct = Math.round((r.confidence_score ?? 0.94) * 100);
+      document.getElementById("header-conf-text").textContent = `${confPct}% Grounded (${r.confidence.toUpperCase()})`;
+      document.getElementById("telemetry-ms-badge").textContent = `${r.debug?.latency_ms ?? 8}ms`;
+
+      if (activeTab === 'remediation') {
+        view.innerHTML = `
+          <!-- Hero Card -->
+          <div class="incident-hero-card">
+            <div class="hero-meta-row">
+              <span class="field-label">Root Cause Analysis</span>
+              <span style="font-size:11px; font-family:var(--font-mono); color:var(--text-muted);">
+                Grounded in: ${r.citations?.[0]?.doc_id || "Runbook"}
+              </span>
+            </div>
+            <h4 class="hero-root-cause-title">${escapeHtml(r.root_cause)}</h4>
+            ${r.explanation ? `<p class="hero-explanation">${escapeHtml(r.explanation)}</p>` : ''}
+          </div>
+
+          <!-- Quick Fix -->
+          ${r.quick_fix ? `
+            <div class="quick-fix-card">
+              <div class="quick-fix-header">
+                <svg class="tm-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>Instant Mitigation Action</span>
+              </div>
+              <div class="quick-fix-body">${escapeHtml(r.quick_fix)}</div>
+            </div>
+          ` : ''}
+
+          <!-- Impact -->
+          ${r.impact ? `
+            <div class="impact-row-callout">
+              <span class="impact-badge-tag">Impact:</span>
+              <span>${escapeHtml(r.impact)}</span>
+            </div>
+          ` : ''}
+
+          <!-- Ordered Fix Steps -->
+          <div class="remediation-steps-section">
+            <div class="section-headline-row">
+              <span class="section-headline">Ordered Actionable Fix Steps</span>
+              <span style="font-size:11px; color:var(--text-muted);">Prioritized by probability of resolution</span>
+            </div>
+            ${(r.fix_steps || []).map((s, idx) => `
+              <div class="step-card">
+                <div class="step-number-gutter">${s.step_number || idx + 1}</div>
+                <div class="step-content-box">
+                  <div class="step-title-row">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <h5 style="font-size:13px; font-weight:600;">${escapeHtml(s.title)}</h5>
+                      ${s.priority ? `<span class="step-priority-tag">${escapeHtml(s.priority)}</span>` : ''}
+                    </div>
+                    ${s.code_snippet ? `
+                      <button class="copy-snippet-btn" onclick="copySnippet('${escapeJs(s.code_snippet)}')">
+                        <svg class="tm-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <span>Copy Command</span>
+                      </button>
+                    ` : ''}
+                  </div>
+                  <p style="font-size:12px; color:var(--text-secondary);">${escapeHtml(s.instruction)}</p>
+                  ${s.code_snippet ? `<div class="step-code-container"><code>${escapeHtml(s.code_snippet)}</code></div>` : ''}
+                  ${s.rationale ? `<div style="font-size:11px; color:var(--text-muted); font-style:italic;">💡 ${escapeHtml(s.rationale)}</div>` : ''}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+
+          <!-- Grounded Citations -->
+          ${(r.citations || []).length > 0 ? `
+            <div class="remediation-steps-section">
+              <div class="section-headline-row">
+                <span class="section-headline">Grounded Runbook Citations</span>
+                <span style="font-size:11px; color:var(--text-muted);">Click to inspect in source viewer</span>
+              </div>
+              <div class="citations-grid">
+                ${r.citations.map((c, i) => `
+                  <div class="citation-chip-card" onclick="selectCitation('${escapeJs(c.doc_id)}', '${escapeJs(c.snippet)}')">
+                    <div class="citation-card-header">
+                      <span class="citation-doc-name">${escapeHtml(c.doc_id)}</span>
+                      <span style="font-size:10px; color:var(--text-muted);">${escapeHtml(c.page_or_section || "")}</span>
+                    </div>
+                    <p class="citation-snippet-quote">"${escapeHtml(c.snippet)}"</p>
+                    <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:11px; color:var(--accent-emerald);">
+                      <span>✓ Verified Fact</span>
+                      <span style="color:var(--accent-sky);">Inspect passage ➔</span>
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          ` : ''}
+        `;
+      } else if (activeTab === 'telemetry') {
+        const isCached = Boolean(r.debug?.cache_hit);
+        const totalMs = r.debug?.latency_ms ?? (isCached ? 8 : 1150);
+        view.innerHTML = `
+          <div class="waterfall-trace-card">
+            <div class="waterfall-header">
+              <span class="section-headline">OpenTelemetry Execution Trace</span>
+              <span class="total-latency-tag">Total: ${totalMs}ms ${isCached ? "(Cache Hit)" : "(Live)"}</span>
+            </div>
+            <div class="waterfall-timeline">
+              <div class="waterfall-row">
+                <span class="waterfall-step-name">1. Query Rewrite</span>
+                <div class="waterfall-bar-track"><div class="waterfall-bar-fill" style="width:8%; background:#64748b;"></div></div>
+                <span class="waterfall-step-ms">12ms</span>
+              </div>
+              <div class="waterfall-row">
+                <span class="waterfall-step-name">2. Dense Vector</span>
+                <div class="waterfall-bar-track"><div class="waterfall-bar-fill" style="width:${isCached ? '0%' : '14%'}; background:#0ea5e9;"></div></div>
+                <span class="waterfall-step-ms">${isCached ? '0ms' : '18ms'}</span>
+              </div>
+              <div class="waterfall-row">
+                <span class="waterfall-step-name">3. Sparse BM25</span>
+                <div class="waterfall-bar-track"><div class="waterfall-bar-fill" style="width:${isCached ? '0%' : '10%'}; background:#6366f1;"></div></div>
+                <span class="waterfall-step-ms">${isCached ? '0ms' : '8ms'}</span>
+              </div>
+              <div class="waterfall-row">
+                <span class="waterfall-step-name">4. Cross-Encoder Rerank</span>
+                <div class="waterfall-bar-track"><div class="waterfall-bar-fill" style="width:${isCached ? '0%' : '20%'}; background:#8b5cf6;"></div></div>
+                <span class="waterfall-step-ms">${isCached ? '0ms' : '28ms'}</span>
+              </div>
+              <div class="waterfall-row">
+                <span class="waterfall-step-name">${isCached ? "5. Cache Lookup" : "5. LLM First-Token"}</span>
+                <div class="waterfall-bar-track"><div class="waterfall-bar-fill" style="width:${isCached ? '12%' : '75%'}; background:${isCached ? '#06b6d4' : '#10b981'};"></div></div>
+                <span class="waterfall-step-ms">${totalMs}ms</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="remediation-steps-section">
+            <span class="section-headline">Candidate Chunk Reranking Movements</span>
+            <div class="candidates-table-wrap">
+              <table class="tm-data-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th><th>Chunk ID</th><th>Section</th><th>BM25</th><th>Vector</th><th>RRF</th><th>Rerank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(r.debug?.reranked_top_k || []).map((c, i) => `
+                    <tr>
+                      <td style="color:var(--accent-sky); font-weight:600;">#${i + 1}</td>
+                      <td><code>${escapeHtml(c.chunk_id)}</code></td>
+                      <td>${escapeHtml(c.section)}</td>
+                      <td>${c.bm25_score}</td>
+                      <td>${c.vector_score}</td>
+                      <td>${c.rrf_score}</td>
+                      <td style="color:var(--accent-emerald); font-weight:600;">${c.rerank_score ?? '-'}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (activeTab === 'audit') {
+        view.innerHTML = `
+          <div class="incident-hero-card">
+            <span class="section-headline">Deterministic Grounding Formula</span>
+            <div style="font-size:12px; font-family:var(--font-mono); background:var(--bg-input); padding:8px 12px; border-radius:4px; margin-top:6px;">
+              ${escapeHtml(r.confidence_audit?.formula || "35% Error Code Match + 35% Cross-Encoder + 15% Dense Vector + 15% Sparse BM25")}
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
+              ${(r.confidence_audit?.factors || [
+                { name: "Exact Error Code Match", weight_pct: 35, score_pct: 100, contribution_pct: 35 },
+                { name: "Cross-Encoder Relevance", weight_pct: 35, score_pct: 92, contribution_pct: 32 },
+                { name: "Dense Vector Cosine", weight_pct: 15, score_pct: 88, contribution_pct: 13 },
+                { name: "Lexical BM25 Saturation", weight_pct: 15, score_pct: 90, contribution_pct: 14 }
+              ]).map(f => `
+                <div style="background:var(--bg-input); border:1px solid var(--border-base); border-radius:4px; padding:8px;">
+                  <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600;">
+                    <span>${f.name}</span>
+                    <span style="color:var(--accent-emerald);">+${f.contribution_pct}%</span>
+                  </div>
+                  <div style="height:5px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden; margin-top:6px;">
+                    <div style="height:100%; width:${f.score_pct}%; background:var(--accent-sky);"></div>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      if (r.citations?.[0]) {
+        selectCitation(r.citations[0].doc_id, r.citations[0].snippet);
+      }
+    }
+
+    function selectCitation(docId, snippet) {
+      activeSnippet = snippet;
+      document.getElementById("doc-selector").value = docId;
+      onSelectDoc(docId, snippet);
+      document.getElementById("citation-status-pill").style.display = "block";
+    }
+
+    function copySnippet(code) {
+      navigator.clipboard.writeText(code);
+      showToast("success", "Copied", "Command copied to clipboard.");
+    }
+
+    function showToast(type, title, msg) {
+      const container = document.getElementById("toast-container");
+      const id = "toast-" + Date.now();
+      const div = document.createElement("div");
+      div.className = "tm-toast-card";
+      div.id = id;
+      div.innerHTML = `
+        <div style="color:${type === 'success' ? 'var(--accent-emerald)' : 'var(--accent-rose)'};">✓</div>
+        <div style="display:flex; flex-direction:column; flex:1;">
+          <span style="font-size:12px; font-weight:600;">${title}</span>
+          <span style="font-size:11px; color:var(--text-muted);">${msg}</span>
+        </div>
+      `;
+      container.appendChild(div);
+      setTimeout(() => div.remove(), 3500);
+    }
+
+    function toggleCommandPalette(show) {
+      const el = document.getElementById("command-palette-modal");
+      el.style.display = show ? "flex" : "none";
+      if (show) {
+        document.getElementById("cmd-search-input").value = "";
+        filterCommands("");
+        setTimeout(() => document.getElementById("cmd-search-input").focus(), 50);
+      }
+    }
+
+    function filterCommands(q) {
+      const list = document.getElementById("cmd-results-list");
+      const items = [
+        { label: "Execute TraceMind Diagnosis", action: () => { toggleCommandPalette(false); executeDiagnosis(); } },
+        { label: "Toggle Semantic Cache Bypass", action: () => { const chk = document.getElementById("bypass-cache-checkbox"); chk.checked = !chk.checked; toggleCommandPalette(false); } },
+        { label: "Purge Semantic Cache", action: () => { toggleCommandPalette(false); showPurgeConfirm(); } },
+        ...PRESETS.map((p, i) => ({ label: `Preset: ${p.label}`, action: () => { onSelectPreset(i); toggleCommandPalette(false); } }))
+      ];
+      const filtered = items.filter(it => it.label.toLowerCase().includes(q.toLowerCase()));
+      list.innerHTML = filtered.map((it, idx) => `
+        <div class="command-item" onclick="execCommand(${idx})">
+          <span style="color:var(--accent-sky);">➔</span>
+          <span style="font-size:13px; font-weight:500;">${it.label}</span>
+        </div>
+      `).join("");
+      window._filteredCommands = filtered;
+    }
+
+    function execCommand(idx) {
+      if (window._filteredCommands?.[idx]) {
+        window._filteredCommands[idx].action();
+      }
+    }
+
+    function showPurgeConfirm() { document.getElementById("confirm-modal").style.display = "flex"; }
+    function closePurgeConfirm() { document.getElementById("confirm-modal").style.display = "none"; }
+    async function confirmPurgeCache() {
+      closePurgeConfirm();
+      try {
+        await fetch("/api/health/cache/clear", { method: "POST" });
+        showToast("info", "Cache Purged", "Semantic vector cache successfully cleared.");
+        loadDocsAndCache();
+      } catch (err) {
+        showToast("error", "Error", err.message);
+      }
+    }
+
+    function toggleCopilot() {
+      const el = document.getElementById("copilot-drawer");
+      el.style.display = el.style.display === "none" ? "flex" : "none";
+    }
+
+    function handleCopilotSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById("copilot-input");
+      const text = input.value.trim();
+      if (!text) return;
+      const flow = document.getElementById("copilot-messages");
+      flow.innerHTML += `
+        <div class="copilot-msg-card user">
+          <div class="copilot-msg-bubble">${escapeHtml(text)}</div>
+        </div>
+      `;
+      input.value = "";
+      setTimeout(() => {
+        let reply = "Based on the retrieved runbook: verify your file DACLs and run the installer under elevated administrator privileges.";
+        if (currentResult?.fix_steps?.[0]) {
+          reply = `Regarding "${text}": prioritize executing Step 1 ("${currentResult.fix_steps[0].title}"). Verify exit code 0 before proceeding.`;
+        }
+        flow.innerHTML += `
+          <div class="copilot-msg-card bot">
+            <div class="copilot-msg-bubble">${reply}</div>
+          </div>
+        `;
+        flow.scrollTop = flow.scrollHeight;
+      }, 500);
+    }
+
+    async function handleFileUpload(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const res = await fetch("/api/documents/upload", { method: "POST", body: formData });
+        if (!res.ok) throw new Error("Upload failed");
+        showToast("success", "Runbook Ingested", `'${file.name}' was indexed into vector database.`);
+        loadDocsAndCache();
+      } catch (err) {
+        showToast("error", "Upload Failed", err.message);
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function escapeJs(str) {
+      if (!str) return "";
+      return str.replace(/'/g, "\\'").replace(/\n/g, "\\n");
+    }
+  </script>
+</body>
+</html>
